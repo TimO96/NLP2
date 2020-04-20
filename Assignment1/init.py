@@ -94,6 +94,6 @@ def init_corpus(path, model, tokenizer, model_type, device, concat=False, cutoff
     
     
     embs, sen_len = fetch_sen_reps(corpus, model, tokenizer, model_type, concat=concat, device=device)    
-    gold_distances = create_gold_distances(corpus)
+    #gold_distances = create_gold_distances(corpus)
     
-    return gold_distances, embs, sen_len
+    return embs, sen_len

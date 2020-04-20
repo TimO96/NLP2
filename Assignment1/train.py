@@ -3,8 +3,9 @@ import torch.nn as nn
 import tree
 import senreps
 import numpy as np
-from init import calc_uuas, init_corpus
+from init import calc_uuas, init_corpus, edges, parse_corpus, create_mst
 from strucprobe import StructuralProbe, L1DistanceLoss
+from tree import print_tikz
 from torch import Tensor
 from transformers import *
 from collections import defaultdict
@@ -14,10 +15,21 @@ from torch.nn.utils.rnn import pad_sequence
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+def create_latex_tree(data, probe, index, corpus):
+    pred = probe(data[1][index].unsqueeze(dim=0).to(device))
+    labels = data[0][index]
+    pred_mst = create_mst(pred[0])
+    gold_mst = create_mst(labels)
+    pred_edges = edges(pred_mst)
+    gold_edges = edges(gold_mst)
+    words = [word['form'] for word in corpus[index]]
+    print_tikz(pred_edges, gold_edges, words)
+    print('uuas score:' + str(calc_uuas(pred[0], labels)))
+
 def load_models(model_type='TF'):
     if model_type == 'TF':
-        model = GPT2Model.from_pretrained('distilgpt2').to(device=device)
-        tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
+        model = XLNetModel.from_pretrained('xlnet-base-cased').to(device=device)
+        tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased')
 
     elif model_type == 'RNN':
         model_location = 'RNN/Gulordava.pt'  # <- point this to the location of the Gulordava .pt file
@@ -55,14 +67,13 @@ def evaluate_probe(probe, data, loss_function, batch_size):
 
         loss_score, total_sents = loss_function(pred, labels, sen_len)
         loss_score_t+=loss_score
-        total_sents_t+=total_sents
 
-        for i in range(len(pred)):
-            pred_slice = pred[i][:int(sen_len[i]), :int(sen_len[i])]
-            label_slice = labels[i][:int(sen_len[i]), :int(sen_len[i])]
+        for j in range(len(pred)):
+            pred_slice = pred[j][:int(sen_len[j]), :int(sen_len[j])]
+            label_slice = labels[j][:int(sen_len[j]), :int(sen_len[j])]
             uuas_score += calc_uuas(pred_slice, label_slice)
 
-    loss_score_t/=total_sents_t
+    loss_score_t/=len(data[1])
     uuas_score/=len(data[1])
         
     return loss_score, uuas_score
@@ -70,12 +81,14 @@ def evaluate_probe(probe, data, loss_function, batch_size):
 
 # Feel free to alter the signature of this method.
 def train(data):
-    emb_dim = 768
+    emb_dim = data['train'][1][0].size(1)
     rank = 64
     lr = 10e-4
     batch_size = 24
-    epochs = 10
+    epochs = 50
 
+    dev_corpus = parse_corpus('data/en_ewt-ud-dev.conllu')
+    test_corpus = parse_corpus('data/en_ewt-ud-test.conllu')
     probe = StructuralProbe(emb_dim, rank, device=device)
     optimizer = optim.Adam(probe.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,patience=1)
@@ -98,7 +111,6 @@ def train(data):
             sen_len = data['train'][2][i:i+batch_size].to(device)
             
             batch_loss, total_sents = loss_function(pred, labels, sen_len)
-            batch_loss/=total_sents
             batch_loss_total.append(batch_loss.item())
             
             if i%(batch_size*50)==0:
@@ -118,6 +130,14 @@ def train(data):
         # Using a scheduler is up to you, and might require some hyper param fine-tuning
         scheduler.step(dev_loss)
 
+    total = 0
+    for i in range(len(test_corpus)):
+        if len(test_corpus[i])<=10:
+            create_latex_tree(data['test'], probe, i, test_corpus)
+            total+=1
+        if total==5:
+            break
+
     test_loss, test_uuas = evaluate_probe(probe, data['test'], loss_function, batch_size)
     
     print("\n---------------------------------------------------------")    
@@ -126,16 +146,23 @@ def train(data):
 
 if __name__ == '__main__':
     data = {}
+    '''
 
     model, tokenizer = load_models(model_type='TF')
     print('model loaded')
     print('load data')
-    #data['train'] = init_corpus('data/en_ewt-ud-train.conllu', model, tokenizer, 'TF', device)
-    #data['dev'] = init_corpus('data/en_ewt-ud-dev.conllu', model, tokenizer, 'TF', device)
-    #data['test'] = init_corpus('data/en_ewt-ud-test.conllu', model, tokenizer, 'TF', device)
-    #torch.save(data, 'TF_data_sample.pt')
+    
+    data['train'] = init_corpus('data/en_ewt-ud-train.conllu', model, tokenizer, 'TF', device)
+    data['dev'] = init_corpus('data/en_ewt-ud-dev.conllu', model, tokenizer, 'TF', device)
+    data['test'] = init_corpus('data/en_ewt-ud-test.conllu', model, tokenizer, 'TF', device)
+    torch.save(data, 'TF_XLNet.pt')
+    '''
 
-    data = torch.load('TF_data.pt')
+    gold_data = torch.load('gold_data.pt')
+    data_model = torch.load('TF_XLNet.pt')
+
+    for key in gold_data:
+        data[key] = [gold_data[key], data_model[key][0], data_model[key][1]]
 
     print('begin training')
 

@@ -41,7 +41,7 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
             hidden_0 = model.init_hidden(1)
             input_ids = Tensor([tokenizer['<eos>']]).type(torch.long).unsqueeze(0).to(device)
             _, hidden_eos = model(input_ids, hidden_0)
-            sen = []
+            output_sen = []
             for word in sentence:
                 if word['form'] not in tokenizer:
                     input_ids = Tensor([tokenizer['<unk>']]).type(torch.long).unsqueeze(0).to(device)
@@ -50,13 +50,15 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
                   
                 output, (hidden, _) = model(input_ids, hidden_eos)
                 
-                sen.append(hidden[-1].squeeze().detach())
+                output_sen.append(hidden[-1].squeeze().detach().cpu())
+
+            output_sen = torch.stack(output_sen)
                 
             if concat:
-                sen_reps.extend(output_sen.cpu())
+                sen_reps.extend(output_sen)
                 
             else:
-                sen_reps.append(output_sen.cpu())
+                sen_reps.append(output_sen)
                 
             sen_len.append(len(sentence))
     
