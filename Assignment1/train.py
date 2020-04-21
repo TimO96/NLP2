@@ -14,6 +14,8 @@ from torch import optim
 from torch.nn.utils.rnn import pad_sequence
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(42)
+np.random.seed(42)
 
 def create_latex_tree(data, probe, index, corpus):
     pred = probe(data[1][index].unsqueeze(dim=0).to(device))
@@ -28,8 +30,8 @@ def create_latex_tree(data, probe, index, corpus):
 
 def load_models(model_type='TF'):
     if model_type == 'TF':
-        model = XLNetModel.from_pretrained('xlnet-base-cased').to(device=device)
-        tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        model = GPT2Model.from_pretrained('gpt2-medium').to(device=device)
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2-medium')
 
     elif model_type == 'RNN':
         model_location = 'RNN/Gulordava.pt'  # <- point this to the location of the Gulordava .pt file
@@ -80,12 +82,15 @@ def evaluate_probe(probe, data, loss_function, batch_size):
 
 
 # Feel free to alter the signature of this method.
-def train(data):
+def train(data, rank):
     emb_dim = data['train'][1][0].size(1)
-    rank = 64
+    #rank = 64
     lr = 10e-4
     batch_size = 24
     epochs = 50
+    max_patience = 5
+    patience = 0
+    best_uuas = 0
 
     dev_corpus = parse_corpus('data/en_ewt-ud-dev.conllu')
     test_corpus = parse_corpus('data/en_ewt-ud-test.conllu')
@@ -121,11 +126,23 @@ def train(data):
             optimizer.step()
 
         dev_loss, dev_uuas = evaluate_probe(probe, data['dev'], loss_function, batch_size)
+
+        if dev_uuas>best_uuas:
+            best_uuas = dev_uuas
+            patience = 0
         
+        else:
+            patience+=1
+            if max_patience==patience:
+                print("\n---------------------------------------------------------")    
+                print("dev set loss: " + str(dev_loss.item()) + ", dev-uuas: " + str(dev_uuas) + " patience: " + str(patience))
+                print("early stopping")
+                print("---------------------------------------------------------") 
+                break
+
         print("\n---------------------------------------------------------")    
-        print("dev set loss: " + str(dev_loss.item()) + ", dev-uuas: " + str(dev_uuas))
-        print("---------------------------------------------------------")        
-        
+        print("dev set loss: " + str(dev_loss.item()) + ", dev-uuas: " + str(dev_uuas) + " patience: " + str(patience))
+        print("---------------------------------------------------------")         
 
         # Using a scheduler is up to you, and might require some hyper param fine-tuning
         scheduler.step(dev_loss)
@@ -144,8 +161,11 @@ def train(data):
     print("test set loss: " + str(test_loss.item()) + ", test-uuas: " + str(test_uuas))
     print("---------------------------------------------------------")
 
+    return test_uuas
+
 if __name__ == '__main__':
     data = {}
+
     '''
 
     model, tokenizer = load_models(model_type='TF')
@@ -155,18 +175,24 @@ if __name__ == '__main__':
     data['train'] = init_corpus('data/en_ewt-ud-train.conllu', model, tokenizer, 'TF', device)
     data['dev'] = init_corpus('data/en_ewt-ud-dev.conllu', model, tokenizer, 'TF', device)
     data['test'] = init_corpus('data/en_ewt-ud-test.conllu', model, tokenizer, 'TF', device)
-    torch.save(data, 'TF_XLNet.pt')
+    torch.save(data, 'TF_GPT2-medium.pt')
     '''
+    rankings = [1, 2, 4, 8, 16, 32, 64, 128]
 
     gold_data = torch.load('gold_data.pt')
-    data_model = torch.load('TF_XLNet.pt')
+    data_model = torch.load('TF_GPT2.pt')
 
     for key in gold_data:
         data[key] = [gold_data[key], data_model[key][0], data_model[key][1]]
 
     print('begin training')
+    uuas_scores = []
 
-    train(data)
+    for rank in rankings:
+        uuas_scores.append(train(data, rank))
+    
+    print(uuas_scores)
+    torch.save(uuas_scores, 'GPT2-scores.pt')
 
     
 

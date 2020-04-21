@@ -4,7 +4,7 @@ from tqdm import tqdm
 from ete3 import Tree as EteTree
 from tree import tokentree_to_ete
 from scipy.sparse.csgraph import minimum_spanning_tree
-from senreps import fetch_sen_reps
+from senreps import fetch_sen_reps, fetch_pos_tags
 
 
 def parse_corpus(filename):
@@ -74,6 +74,15 @@ def calc_uuas(pred_distances, gold_distances):
         uuas=0
     
     return uuas
+
+def create_data(filename: str, model, tokenizer, model_type, device, vocab=None):
+    ud_parses = parse_corpus(filename)
+    
+    sen_reps = fetch_sen_reps(ud_parses, model, tokenizer, model_type, concat=True, device=device)
+    
+    pos_tags, pos_vocab = fetch_pos_tags(ud_parses, vocab=vocab)
+    
+    return sen_reps, pos_tags, pos_vocab
 
 def init_corpus(path, model, tokenizer, model_type, device, concat=False, cutoff=None):
     """ Initialises the data of a corpus.

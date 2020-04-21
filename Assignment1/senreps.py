@@ -22,7 +22,7 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
                 connected.append(token_num)
                     
             input_sen = Tensor(total_tokens).type(torch.long).unsqueeze(0).to(device)
-            output = model(input_sen)[0][0].detach()
+            output = model(input_ids=input_sen)[0][0].detach()
             
             output_sen = output[0:connected[0]].mean(dim=0).unsqueeze(dim=0)
             for i in range(len(connected)-1):
@@ -62,4 +62,34 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
                 
             sen_len.append(len(sentence))
     
-    return sen_reps, Tensor(sen_len)
+    if concat:
+        return torch.stack(sen_reps)
+
+    else:
+        return sen_reps, Tensor(sen_len)
+
+def fetch_pos_tags(ud_parses: List[TokenList], vocab=None) -> Tensor:
+    pos_tags = []
+    vocab_list = []
+    for sentence in ud_parses:
+        for word in sentence:
+            pos_tag = word['upostag']
+            
+            if vocab:
+                if pos_tag not in vocab:
+                    pos_tags.append(vocab['unk'])
+                
+                else:
+                    pos_tags.append(vocab[pos_tag])
+            
+            else:
+                if pos_tag not in vocab_list:
+                    vocab_list.append(pos_tag)
+                
+                pos_tags.append(vocab_list.index(pos_tag))
+    
+    if not vocab:
+        vocab_list.append('unk')
+        vocab_list = {vocab_list[i]:i for i in range(len(vocab_list))}
+    
+    return Tensor(pos_tags), vocab_list
