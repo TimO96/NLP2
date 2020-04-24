@@ -16,6 +16,11 @@ def parse_corpus(filename):
     return ud_parses
 
 def create_gold_distances(corpus):
+    '''
+    create gold distances from the corpus for every sentence
+    gold distances are stored as 2D Tensors
+    '''
+
     all_distances = []
 
     for item in tqdm(corpus):
@@ -26,7 +31,6 @@ def create_gold_distances(corpus):
         sen_len = len(nodes)
         distances = torch.zeros((sen_len, sen_len))
 
-        # Your code for computing all the distances comes here.
         for i in range(sen_len):
             node1 = nodes[i]
             for j in range(i, sen_len):
@@ -40,6 +44,9 @@ def create_gold_distances(corpus):
     return all_distances
 
 def create_mst(distances):
+    '''
+    create minimum spanning trees from distances
+    '''
     distances = torch.triu(distances).detach().cpu().numpy()
     
     mst = minimum_spanning_tree(distances).toarray()
@@ -48,7 +55,9 @@ def create_mst(distances):
     return mst
 
 def edges(mst):
-    # Your code for retrieving the edges from the MST matrix
+    '''
+    creates edges stored as tuples from minimum spanning trees
+    '''
     edges = []
     for i in range(len(mst)):
         for j in (mst[i]==1).nonzero()[0]:
@@ -57,7 +66,9 @@ def edges(mst):
     return set(edges)
 
 def calc_uuas(pred_distances, gold_distances): 
-    # Your code for computing the UUAS score
+    '''
+    calculating uuas scores for normal struc. dependency task
+    '''
     pred_mst = create_mst(pred_distances)
     gold_mst = create_mst(gold_distances)
     
@@ -68,14 +79,31 @@ def calc_uuas(pred_distances, gold_distances):
     total_gold = len(gold_edges)
     if total_gold!=0:
         uuas = correct/total_gold
-    elif total_gold==0 and len(pred_edges)==0:
+    elif len(pred_edges)==0:
         uuas = 1
     else:
         uuas=0
     
     return uuas
 
+def calc_fake_uuas(pred_edges, fake_edges):
+    '''
+    calculating uuas scores based only on edges for control task
+    '''
+    correct = sum(pred_edges.max(dim=0)[1]==fake_edges).item()
+    if len(fake_edges)!=0:
+        uuas = correct/len(fake_edges)
+    elif len(pred_edges)==0:
+        uuas = 1
+    else:
+        uuas=0
+
+    return uuas 
+
 def create_data(filename: str, model, tokenizer, model_type, device, vocab=None):
+    '''
+    create data for the POS-tagging task
+    '''
     ud_parses = parse_corpus(filename)
     
     sen_reps = fetch_sen_reps(ud_parses, model, tokenizer, model_type, concat=True, device=device)

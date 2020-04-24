@@ -1,13 +1,19 @@
 import torch
+import random
 from torch import Tensor
 from tqdm import tqdm
 from typing import List
 from conllu import parse_incr, TokenList
 from torch.nn.utils.rnn import pad_sequence
 
-# Should return a tensor of shape (num_tokens_in_corpus, representation_size)
-# Make sure you correctly average the subword representations that belong to 1 token!
+# 
 def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, concat, device) -> Tensor:
+    '''
+    creates sentence representations for Transformer or RNN models
+    Returns a list with Tensors of shape (num_tokens_in_sentence, representation_size) if concat = False
+    Returns a tensor of shape (num_tokens_in_corpus, representation_size) if concat = True
+    Note: This is tested on GPT-2, XLNet and LSTM models, other model may have different inputs and outputs
+    '''
     sen_reps = []
     sen_len = []
     for sentence in tqdm(ud_parses):
@@ -22,7 +28,7 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
                 connected.append(token_num)
                     
             input_sen = Tensor(total_tokens).type(torch.long).unsqueeze(0).to(device)
-            output = model(input_ids=input_sen)[0][0].detach()
+            output = model(input_sen)[0][0].detach()
             
             output_sen = output[0:connected[0]].mean(dim=0).unsqueeze(dim=0)
             for i in range(len(connected)-1):
@@ -69,6 +75,9 @@ def fetch_sen_reps(ud_parses: List[TokenList], model, tokenizer, model_type, con
         return sen_reps, Tensor(sen_len)
 
 def fetch_pos_tags(ud_parses: List[TokenList], vocab=None) -> Tensor:
+    '''
+    fetch pos tags for all words in corpus and also returns the mapping POS -> index
+    '''
     pos_tags = []
     vocab_list = []
     for sentence in ud_parses:
@@ -93,3 +102,23 @@ def fetch_pos_tags(ud_parses: List[TokenList], vocab=None) -> Tensor:
         vocab_list = {vocab_list[i]:i for i in range(len(vocab_list))}
     
     return Tensor(pos_tags), vocab_list
+
+def fetch_fake_pos_tags(ud_parses, real_vocab, fake_vocab=None):
+    '''
+    creates fake POS-tags as described in the method of (Hewitt and Liang, 2019)
+    '''
+    pos_tags = []
+    if fake_vocab:
+        vocab = fake_vocab
+    else:
+        vocab = {}
+
+    for sentence in ud_parses:
+        for word in sentence:
+            if word['form'] not in vocab:
+                vocab[word['form']] = random.randint(0, len(real_vocab)-1)
+            
+            pos_tags.append(vocab[word['form']])
+    
+    return Tensor(pos_tags), vocab
+

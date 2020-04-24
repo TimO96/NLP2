@@ -2,6 +2,9 @@ import torch.nn as nn
 import numpy as np
 
 class DC(nn.Module):
+    '''
+    Diagnostic Classifier for probing POS-tags from hidden representations
+    '''
     def __init__(self, features, pos_tags, layers=[]):
         super(DC, self).__init__()
 
@@ -11,6 +14,7 @@ class DC(nn.Module):
         modules = []
         for i in range(len(layers)-1):
             modules.append(nn.Linear(layers[i], layers[i+1]))
+            #Only append Leaky Relu if not simple linear mapping
             if i>0:
                 modules.append(nn.LeakyReLU(self.neg_slope))
         

@@ -1,20 +1,28 @@
+import os
 import torch
 import torch.nn as nn
 import tree
 import senreps
 import numpy as np
-from init import create_data
+from init import create_data, parse_corpus
 from DC import DC
+from senreps import fetch_fake_pos_tags
 from torch import Tensor
 from transformers import *
 from collections import defaultdict
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(42)
+np.random.seed(42)
 
 def load_models(model_type='TF'):
+    '''
+    Load transformers from huggingface when model_type='TF'
+    Load LSTM from (gulordava et al, 2018) when model_type='RNN'
+    '''
     if model_type == 'TF':
-        model = XLNetModel.from_pretrained('xlnet-base-cased').to(device=device)
-        tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        model = GPT2Model.from_pretrained('distilgpt2').to(device=device)
+        tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
 
     elif model_type == 'RNN':
         model_location = 'RNN/Gulordava.pt'  # <- point this to the location of the Gulordava .pt file
@@ -29,6 +37,10 @@ def load_models(model_type='TF'):
     return model, tokenizer
 
 def evaluate_pos(test_x, test_y, model_DC, total_batches_test, batch_size):
+    '''
+    evaluation for both the dev and test set
+    calculates the accuracy for the corresponding dataset
+    '''
     correct = 0
     for i in range(total_batches_test):
         if i < total_batches_test-1:
@@ -47,9 +59,14 @@ def evaluate_pos(test_x, test_y, model_DC, total_batches_test, batch_size):
 
 
 def train(data):
+    '''
+    Performs the training of the POS-tagging task
+    Prints the accuracy that is obtained from the test set
+    '''
+
     learning_rate = 1e-3
     batch_size = 64
-    epochs = 100   
+    epochs = 500   
 
     loss = nn.CrossEntropyLoss()
 
@@ -131,21 +148,38 @@ def train(data):
         
 
 if __name__ == '__main__':
+    control = False
+
     data = {}
+    model_file = 'TF_GPT2-distil.pt'
     model_type = 'TF'
-
-    model, tokenizer = load_models(model_type=model_type)
-    print('load data')
+    fake_file = 'fake-pos.pt'
     
-    data['train'] = create_data('data/en_ewt-ud-train.conllu', model, tokenizer, model_type, device)
-    data['dev'] = create_data('data/en_ewt-ud-dev.conllu', model, tokenizer, model_type, device, vocab=data['train'][2])
-    data['test'] = create_data('data/en_ewt-ud-test.conllu', model, tokenizer, model_type, device, vocab=data['train'][2])
-    torch.save(data, model_type+'-XLNet-pos.pt')
+    print('load data')
+    if not os.path.exists('pos-'+model_file):
+        model, tokenizer = load_models(model_type=model_type)
+        data['train'] = create_data('data/en_ewt-ud-train.conllu', model, tokenizer, model_type, device)
+        data['dev'] = create_data('data/en_ewt-ud-dev.conllu', model, tokenizer, model_type, device, vocab=data['train'][2])
+        data['test'] = create_data('data/en_ewt-ud-test.conllu', model, tokenizer, model_type, device, vocab=data['train'][2])
+        torch.save(data, 'pos-'+model_file)
+    else:
+        data = torch.load('pos-'+model_file)
 
-    data = torch.load(model_type+'-XLNet-pos.pt')
-    print('model loaded')
+    if control:
+        if not os.path.exists(fake_file):
+            fake_train_pos, fake_vocab = fetch_fake_pos_tags(parse_corpus('data/en_ewt-ud-train.conllu'), data['train'][2], fake_vocab=None)
+            fake_dev_pos = fetch_fake_pos_tags(parse_corpus('data/en_ewt-ud-dev.conllu'), data['train'][2], fake_vocab=fake_vocab)[0]
+            fake_test_pos = fetch_fake_pos_tags(parse_corpus('data/en_ewt-ud-test.conllu'), data['train'][2], fake_vocab=fake_vocab)[0]
+            torch.save([fake_train_pos, fake_dev_pos, fake_test_pos], fake_file)
+        else:
+            fake_train_pos, fake_dev_pos, fake_test_pos = torch.load(fake_file)
+    
+        data['train'] = (data['train'][0], fake_train_pos, data['train'][2])
+        data['dev'] = (data['dev'][0], fake_dev_pos, data['dev'][2])
+        data['test'] = (data['test'][0], fake_test_pos, data['test'][2])
+
+    print('data loaded')
 
     print('begin training')
 
-    
     train(data)
