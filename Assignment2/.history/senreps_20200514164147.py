@@ -68,7 +68,7 @@ def proc_embeddings_bertje(data, model, tokenizer, embeddings, nl_en, model_type
 
             for word in sentence:
                 if word in embeddings.vocabulary:
-                    pass
+                    output_source.append(1)
                 else:
                     continue
                     
@@ -76,8 +76,7 @@ def proc_embeddings_bertje(data, model, tokenizer, embeddings, nl_en, model_type
                     input_ids = tokenizer.encode(word)[1]
                 else:
                     continue
-                
-                output_source.append(1)
+                    
                 total_tokens.append(input_ids)
 
             if not output_source:
