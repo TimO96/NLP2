@@ -2,18 +2,22 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-from dataloaders import EmbeddingDataset
 from torch import Tensor
 from transformers import *
 from torch import optim
-from torch.utils.data import DataLoader, Dataset
 from torch.nn.init import xavier_uniform_, xavier_normal_
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-torch.manual_seed(42)
-np.random.seed(42)
+#torch.manual_seed(42)
+#np.random.seed(42)
 
-def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constraint=False, lambda_c=0.5):
+def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constraint=False):
+    '''
+    Optimizes the projection matrix W
+    when constraint = False -> Mikolov (2013) method
+    when constraint = True -> Xing (2015) method
+    Returns a projection matrix W
+    '''
 
     source_dim = data['train'][0][0].size(1)
     target_dim = data['train'][1][0].size(1)
@@ -53,9 +57,7 @@ def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constr
             if constraint:
                 u, s, v = torch.svd(torch.matmul(features.transpose(0, 1), labels))
                 W_constr = torch.matmul(u, v.transpose(0, 1))
-                loss_mse = loss_func(preds, labels)
-                loss_constr = loss_func(W, W_constr)*weight_c
-                loss = lambda_c*loss_mse + (1-lambda_c)*loss_constr
+                loss = loss_func(W, W_constr)*weight_c
 
             else:
                 loss = loss_func(preds, labels)
@@ -84,9 +86,7 @@ def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constr
                 if constraint:
                     u, s, v = torch.svd(torch.matmul(features.transpose(0, 1), labels))
                     W_constr = torch.matmul(u, v.transpose(0, 1))
-                    loss_mse = loss_func(preds, labels)
-                    loss_constr = loss_func(W, W_constr)*weight_c
-                    loss = lambda_c*loss_mse + (1-lambda_c)*loss_constr
+                    loss = loss_func(W, W_constr)*weight_c
 
                 else:
                     loss = loss_func(preds, labels)
@@ -138,9 +138,7 @@ def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constr
             if constraint:
                 u, s, v = torch.svd(torch.matmul(features.transpose(0, 1), labels))
                 W_constr = torch.matmul(u, v.transpose(0, 1))
-                loss_mse = loss_func(preds, labels)
-                loss_constr = loss_func(W, W_constr)*weight_c
-                loss = lambda_c*loss_mse + (1-lambda_c)*loss_constr
+                loss = loss_func(W, W_constr)*weight_c
 
             else:
                 loss = loss_func(preds, labels)
@@ -154,10 +152,3 @@ def train(data, epochs=100, batch_size=64, lr=1e-4, early_stopping=False, constr
     print("---------------------------------------------------------")
 
     return W
-
-if __name__ == "__main__":
-    data = torch.load('xlingual_data.pt')
-    lambda_c_list = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-    for lambda_c in lambda_c_list:
-        W = train(data, batch_size=64, early_stopping=True, constraint=True, lambda_c=lambda_c)
-        torch.save(W, 'proj_matrix_' + str(lambda_c) + '.pt')
